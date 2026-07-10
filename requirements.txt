@@ -1,0 +1,23 @@
+# Environnement RAG - Puls-Events
+# Traitement de données
+pandas>=2.0.0
+requests>=2.31.0
+plotly.express>=5.20.0
+kaleido>=0.2.1  # Pour l'exportation de graphiques Plotly en PNG
+
+# LLM & Vector Store
+langchain>=0.1.0
+langchain-community>=0.0.10
+langchain-mistralai>=0.0.5
+mistralai>=0.4.2  # Remplace l'ancien package 'mistral'
+sentence-transformers>=2.2.2  # Requis pour HuggingFaceEmbeddings
+faiss-cpu>=1.7.4   # Privilégié pour la portabilité
+
+# API
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# Utilitaires
+python-dotenv>=1.0.0
+pytest>=8.0.0
+jupyter>=1.0.0

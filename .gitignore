@@ -1,0 +1,16 @@
+# Environnements virtuels
+env/
+venv/
+.env
+
+# Fichiers de cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Fichiers de données (à ajouter si volumineux)
+data/
+*.csv
+*.json
+*.faiss
+*.pkl
