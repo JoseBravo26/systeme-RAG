@@ -7,6 +7,7 @@ from langchain_mistralai.chat_models import ChatMistralAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
+from datetime import datetime
 
 class PulsEventsChatbot:
     def __init__(self, index_path: str = "data/faiss_index"):
@@ -33,26 +34,35 @@ class PulsEventsChatbot:
         
         # 3. LLM Mistral pour la génération de texte (on utilise le modèle 'small' qui est un bon compromis)
         self.llm = ChatMistralAI(model="mistral-small-latest", temperature=0.1, mistral_api_key=api_key)
-        
-        # 4. Définition du Prompt
+ 
+        # 4. Définition du Prompt (ajout de la variable {date_du_jour})
         template = """
-        Tu es l'assistant culturel virtuel de Puls-Events.
-        Réponds à la question de l'utilisateur uniquement en te basant sur le contexte fourni ci-dessous.
-        Si l'information n'est pas dans le contexte, réponds poliment que tu ne trouves pas d'événement correspondant, sans inventer d'informations.
-        Mentionne toujours le titre, le lieu (ville) et les dates dans ta recommandation.
-        
-        Contexte :
-        {context}
-        
-        Question de l'utilisateur : {question}
-        
-        Réponse claire et enthousiaste (en français) :
-        """
+Tu es l'assistant culturel virtuel de Puls-Events.
+Aujourd'hui, nous sommes le {date_du_jour}.
+
+Réponds à la question de l'utilisateur uniquement en te basant sur le contexte fourni ci-dessous.
+Pour les questions concernant "aujourd'hui", "demain" ou "ce week-end", utilise la date d'aujourd'hui pour évaluer si les événements du contexte correspondent.
+Si l'information n'est pas dans le contexte, ou si les dates des événements ne correspondent pas à la demande, réponds poliment que tu ne trouves pas d'événement, sans inventer d'informations.
+Mentionne toujours le titre, le lieu (ville) et les dates dans ta recommandation.
+
+Contexte :
+{context}
+
+Question de l'utilisateur : {question}
+
+Réponse claire et enthousiaste (en français) :
+"""
+        # On définit les variables que le prompt attend (context, question, date_du_jour)
         self.prompt = ChatPromptTemplate.from_template(template)
-        
-        # 5. Construction de la chaîne LCEL (LangChain Expression Language)
+
+        # 5. Construction de la chaîne LCEL
+        # On ajoute RunnablePassthrough() pour laisser passer la date_du_jour vers le prompt
         self.rag_chain = (
-            {"context": self.retriever | self._format_docs, "question": RunnablePassthrough()}
+            {
+                "context": lambda x: self._format_docs(self.retriever.invoke(x["question"])), 
+                "question": lambda x: x["question"],
+                "date_du_jour": lambda x: x["date_du_jour"]
+            }
             | self.prompt
             | self.llm
             | StrOutputParser()
@@ -67,12 +77,18 @@ class PulsEventsChatbot:
         """
         Pose une question au chatbot et retourne la réponse générée ainsi que les documents sources.
         """
-        # Exécution de la chaîne pour obtenir la réponse textuelle
-        answer = self.rag_chain.invoke(question)
+        # Obtenir la date actuelle formatée
+        current_date = datetime.now().strftime("%A %d %B %Y")
         
+        # Exécution de la chaîne en passant un dictionnaire avec la question ET la date
+        answer = self.rag_chain.invoke({
+            "question": question,
+            "date_du_jour": current_date
+        })
+
         # Récupération séparée des sources pour la traçabilité
         source_docs = self.retriever.invoke(question)
-        
+
         return {
             "question": question,
             "answer": answer,
