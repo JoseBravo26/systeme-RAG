@@ -41,3 +41,11 @@ Créez un fichier `.env` à la racine du projet (ce fichier est ignoré par Git)
 \`\`\`env
 MISTRAL_API_KEY=votre_cle_api_ici
 \`\`\`
+# 1. Build de l'image Docker
+docker build -t puls-events-rag .
+
+# 2. Run de l'API avec variables d'environnement
+docker run -p 8000:8000 \
+  -e MISTRAL_API_KEY="votre_cle_mistral" \
+  -e MISTRAL_BASE_URL="https://api.mistral.ai/v1" \
+  puls-events-rag

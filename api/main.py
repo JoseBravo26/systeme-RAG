@@ -1,24 +1,23 @@
 """
-API REST pour exposer le système RAG Puls-Events.
+API REST du système RAG Puls-Events.
 
-Routes principales :
-- GET  /health   : vérification de l'état de l'API
-- POST /ask      : poser une question au chatbot RAG
-- POST /rebuild  : reconstruire l'index FAISS à partir du CSV
+Endpoints :
+- GET  /health   : état de l'API
+- POST /ask      : interroger le chatbot
+- POST /rebuild  : reconstruire l'index FAISS à partir du CSV nettoyé
 """
 
 import os
 import sys
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-# Permet à Python de trouver le dossier 'src' quand on lance `uvicorn api.main:app`
+# Ajout du dossier racine au PYTHONPATH
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# Imports de la logique métier
 from src.rag.chatbot import PulsEventsChatbot
 from src.indexing.faiss_indexer import (
     create_documents_from_csv,
@@ -28,101 +27,101 @@ from src.indexing.faiss_indexer import (
 
 load_dotenv()
 
-# ---------------------------
-# Modèles Pydantic (schéma I/O)
-# ---------------------------
+app = FastAPI(
+    title="Puls-Events RAG API",
+    description="API de recommandation d'événements culturels basée sur LangChain, Mistral et FAISS.",
+    version="1.1.0"
+)
+
+chatbot: Optional[PulsEventsChatbot] = None
+
+
+# =========================
+# Modèles Pydantic
+# =========================
 
 class ChatRequest(BaseModel):
-    """
-    Modèle de requête pour l'endpoint /ask.
-    """
     question: str
 
 
 class SourceDoc(BaseModel):
-    """
-    Représentation simplifiée d’un document source renvoyé au client.
-    """
     title: str
     city: str
 
 
 class ChatResponse(BaseModel):
-    """
-    Réponse renvoyée au client : question, réponse générée, et sources.
-    """
     question: str
     answer: str
     sources: List[SourceDoc]
 
 
+class RebuildRequest(BaseModel):
+    csv_path: str = "data/evenements_clean.csv"
+    index_path: str = "data/faiss_index"
+    max_chunks: Optional[int] = None
+
+
 class RebuildResponse(BaseModel):
-    """
-    Réponse renvoyée après reconstruction de l’index.
-    """
+    status: str
     message: str
     nb_documents: int
     nb_chunks: int
+    csv_path: str
+    index_path: str
 
 
-# ---------------------------
-# Initialisation FastAPI
-# ---------------------------
+# =========================
+# Fonctions utilitaires
+# =========================
 
-app = FastAPI(
-    title="Puls-Events RAG API",
-    description="API de recommandation d'événements culturels basée sur Mistral, FAISS et LangChain.",
-    version="1.0.0",
-)
-
-# Instance globale du chatbot (chargée au démarrage)
-chatbot: PulsEventsChatbot | None = None
+def load_chatbot(index_path: str = "data/faiss_index") -> PulsEventsChatbot:
+    """
+    Charge un chatbot à partir d'un index FAISS déjà présent sur disque.
+    """
+    return PulsEventsChatbot(index_path=index_path)
 
 
-# ---------------------------
-# Hooks de cycle de vie
-# ---------------------------
+# =========================
+# Démarrage
+# =========================
 
 @app.on_event("startup")
 def startup_event():
     """
-    Au démarrage du serveur :
-    - On charge l’index FAISS déjà construit
-    - On initialise le chatbot RAG
+    Chargement initial du chatbot au démarrage du serveur.
     """
     global chatbot
+
     try:
-        print("🚀 Démarrage de l'API et chargement du système RAG...")
-        chatbot = PulsEventsChatbot(index_path="data/faiss_index")
-        print("✅ Chatbot initialisé avec succès.")
+        print("🚀 Chargement initial du chatbot...")
+        chatbot = load_chatbot("data/faiss_index")
+        print("✅ Chatbot prêt.")
     except Exception as e:
-        # On log l'erreur, mais on laisse l'API démarrer (le /health pourra le refléter)
-        print(f"❌ Erreur lors du chargement du Chatbot : {e}")
+        print(f"❌ Impossible de charger le chatbot au démarrage : {e}")
         chatbot = None
 
 
-# ---------------------------
-# Routes publiques
-# ---------------------------
+# =========================
+# Endpoints
+# =========================
 
 @app.get("/health")
 def health_check():
     """
-    Endpoint de santé basique.
-    Permet de vérifier si l’API tourne et si le chatbot est prêt.
+    Vérifie si l'API et le chatbot sont opérationnels.
     """
-    status = "ready" if chatbot is not None else "not_ready"
-    return {"status": status}
+    return {
+        "status": "ready" if chatbot is not None else "not_ready"
+    }
 
 
 @app.post("/ask", response_model=ChatResponse)
 def ask_question(request: ChatRequest):
     """
-    Endpoint principal : pose une question au système RAG.
-
-    - Input  : JSON {"question": "..."}
-    - Output : JSON {"question": "...", "answer": "...", "sources": [...]}
+    Pose une question au système RAG.
     """
+    global chatbot
+
     if chatbot is None:
         raise HTTPException(status_code=500, detail="Le système RAG n'est pas initialisé.")
 
@@ -131,61 +130,85 @@ def ask_question(request: ChatRequest):
         raise HTTPException(status_code=400, detail="La question ne peut pas être vide.")
 
     try:
-        # On interroge le chatbot (LangChain + FAISS + Mistral)
         result = chatbot.ask(question)
 
-        # Formatage des sources pour la réponse JSON
-        formatted_sources = []
-        for doc in result["sources"]:
-            formatted_sources.append(
-                SourceDoc(
-                    title=doc.metadata.get("title", "Titre inconnu"),
-                    city=doc.metadata.get("city", "Ville inconnue"),
-                )
+        sources = [
+            SourceDoc(
+                title=doc.metadata.get("title", "Titre inconnu"),
+                city=doc.metadata.get("city", "Ville inconnue")
             )
+            for doc in result["sources"]
+        ]
 
         return ChatResponse(
             question=question,
             answer=result["answer"],
-            sources=formatted_sources,
+            sources=sources
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la génération de la réponse : {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la génération : {e}")
 
 
 @app.post("/rebuild", response_model=RebuildResponse)
-def rebuild_index():
+def rebuild_index(request: RebuildRequest):
     """
-    Reconstruit l’index FAISS à partir du fichier CSV des événements.
-
-    ⚠ À sécuriser si l’API est un jour exposée publiquement.
-    Pour le POC, on le laisse accessible en local.
+    Reconstruit complètement l'index FAISS à partir du CSV nettoyé,
+    puis recharge le chatbot en mémoire.
     """
     global chatbot
 
-    csv_path = "data/evenements_clean.csv"
+    csv_path = request.csv_path
+    index_path = request.index_path
+    max_chunks = request.max_chunks
+
     if not os.path.exists(csv_path):
-        raise HTTPException(status_code=500, detail=f"Fichier CSV introuvable à {csv_path}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Fichier CSV introuvable : {csv_path}"
+        )
 
     try:
-        # 1. Création des documents à partir du CSV
+        print("🔄 Reconstruction de l'index FAISS...")
+        print(f"📄 CSV source : {csv_path}")
+
+        # 1. Création des documents
         docs = create_documents_from_csv(csv_path)
+        nb_documents = len(docs)
+
+        if nb_documents == 0:
+            raise ValueError("Aucun document exploitable trouvé dans le CSV.")
 
         # 2. Chunking
         chunks = split_documents(docs)
 
-        # 3. Reconstruction complète de l’index FAISS sur disque
-        build_faiss_index(chunks, save_dir="data/faiss_index")
+        if max_chunks is not None:
+            chunks = chunks[:max_chunks]
 
-        # 4. Réinitialisation du chatbot avec le nouvel index
-        chatbot = PulsEventsChatbot(index_path="data/faiss_index")
+        nb_chunks = len(chunks)
+
+        if nb_chunks == 0:
+            raise ValueError("Aucun chunk généré pour la reconstruction.")
+
+        # 3. Reconstruction de l'index vectoriel
+        build_faiss_index(chunks, save_dir=index_path)
+
+        # 4. Rechargement du chatbot avec le nouvel index
+        chatbot = load_chatbot(index_path=index_path)
+
+        print("✅ Reconstruction terminée avec succès.")
 
         return RebuildResponse(
-            message="Index FAISS reconstruit et chatbot réinitialisé avec succès.",
-            nb_documents=len(docs),
-            nb_chunks=len(chunks),
+            status="success",
+            message="Index FAISS reconstruit et chatbot rechargé avec succès.",
+            nb_documents=nb_documents,
+            nb_chunks=nb_chunks,
+            csv_path=csv_path,
+            index_path=index_path
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur lors de la reconstruction de l'index : {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur pendant la reconstruction de l'index : {e}"
+        )
