@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+import dateutil.parser
 from dotenv import load_dotenv
 
 from langchain_community.vectorstores import FAISS
@@ -6,8 +8,6 @@ from langchain_mistralai.embeddings import MistralAIEmbeddings
 from langchain_mistralai.chat_models import ChatMistralAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
-from datetime import datetime
 
 class PulsEventsChatbot:
     def __init__(self, index_path: str = "data/faiss_index"):
@@ -18,39 +18,37 @@ class PulsEventsChatbot:
             raise ValueError("❌ MISTRAL_API_KEY manquante.")
 
         print("🧠 Chargement des modèles et de l'index FAISS...")
-        
+
         # 1. Modèle d'embedding
         self.embeddings = MistralAIEmbeddings(model="mistral-embed", mistral_api_key=api_key)
-        
+
         # 2. Base vectorielle FAISS
         self.vector_store = FAISS.load_local(
             index_path, 
             self.embeddings, 
-            allow_dangerous_deserialization=True # Requis par LangChain pour charger un index local
+            allow_dangerous_deserialization=True
         )
-        
-        # Le retriever récupère les 3 documents les plus pertinents
-        self.retriever = self.vector_store.as_retriever(search_kwargs={"k": 3})
-        
-        # 3. LLM Mistral pour la génération de texte (on utilise le modèle 'small' qui est un bon compromis)
+
+        # 3. LLM Mistral
         self.llm = ChatMistralAI(model="mistral-small-latest", temperature=0.1, mistral_api_key=api_key)
 
-                # 4. Définition du Prompt
+           # 4. Définition du Prompt
         template = """
 Tu es l'assistant culturel virtuel de Puls-Events.
 Aujourd'hui, nous sommes le {date_du_jour}.
 
 Réponds à la question de l'utilisateur UNIQUEMENT en te basant sur le contexte fourni ci-dessous. Ne l'invente jamais.
-Si la question contient des termes relatifs comme "ce week-end", utilise la date d'aujourd'hui pour calculer si les événements correspondent.
 
-RÈGLE DE FORMATAGE ET DE FILTRAGE OBLIGATOIRE :
-1. Si les événements du contexte ne tombent pas aux dates demandées, dis-le clairement en première phrase.
-2. Ensuite, propose les événements présents dans le contexte comme des alternatives.
-3. FILTRE TEMPOREL STRICT : Tu as l'interdiction absolue de proposer un événement dont la date est antérieure à aujourd'hui ({date_du_jour}). Si tous les événements du contexte sont déjà passés, dis simplement que tu n'as pas de suggestions futures pour le moment.
-4. Utilise une liste à puces (-) pour présenter les alternatives futures.
-5. Mets le titre de l'événement en gras.
-6. Précise toujours la ville et la VRAIE date de l'événement.
-7. Sois enthousiaste, chaleureux, et ajoute quelques émojis pertinents (😊, 🎷, ✨, etc.).
+RÈGLES DE RÉPONSE OBLIGATOIRES :
+1. CORRESPONDANCE PARFAITE : Si le contexte contient un événement dont la vraie date correspond à la demande, réponds avec enthousiasme en le proposant directement (sans dire qu'il n'y a pas d'événement). Ignore les dates contradictoires dans le titre de l'événement, seule la vraie date compte.
+2. ALTERNATIVES : Uniquement si AUCUN événement du contexte ne correspond à la date demandée, dis-le clairement, puis propose ce que tu as comme alternative.
+3. CONTEXTE VIDE : Si le contexte indique "Aucun événement futur", dis poliment que tu n'as rien à proposer.
+
+FORMAT DE PRÉSENTATION (pour les cas 1 et 2) :
+- Utilise une liste à puces (-) pour présenter les événements.
+- Mets le titre en gras.
+- Précise toujours la ville et la vraie date de l'événement.
+- Ajoute quelques émojis pertinents (😊, 🚀, ✨).
 
 Contexte :
 {context}
@@ -59,21 +57,11 @@ Question de l'utilisateur : {question}
 
 Réponse :
 """
-        # On définit les variables que le prompt attend (context, question, date_du_jour)
         self.prompt = ChatPromptTemplate.from_template(template)
 
-        # 5. Construction de la chaîne LCEL
-        # On ajoute RunnablePassthrough() pour laisser passer la date_du_jour vers le prompt
-        self.rag_chain = (
-            {
-                "context": lambda x: self._format_docs(self.retriever.invoke(x["question"])), 
-                "question": lambda x: x["question"],
-                "date_du_jour": lambda x: x["date_du_jour"]
-            }
-            | self.prompt
-            | self.llm
-            | StrOutputParser()
-        )
+        # 5. Chaîne LLM simple (sans le retriever automatique !)
+        self.qa_chain = self.prompt | self.llm | StrOutputParser()
+        
         print("✅ Chatbot RAG prêt à l'emploi !")
 
     def _format_docs(self, docs):
@@ -82,38 +70,46 @@ Réponse :
 
     def ask(self, question: str) -> dict:
         """
-        Pose une question au chatbot et retourne la réponse générée ainsi que les documents sources.
+        Pose une question au chatbot, filtre les événements passés, 
+        et retourne la réponse générée ainsi que les documents sources.
         """
-        # Obtenir la date actuelle formatée
-        current_date = datetime.now().strftime("%A %d %B %Y")
+        current_date = datetime.now().date()
+        formatted_current_date = current_date.strftime("%A %d %B %Y")
         
-        # Exécution de la chaîne en passant un dictionnaire avec la question ET la date
-        answer = self.rag_chain.invoke({
+        # 1. Récupération large (100 documents)
+        large_retriever = self.vector_store.as_retriever(search_kwargs={"k": 100})
+        raw_docs = large_retriever.invoke(question)
+        
+        # 2. Filtrage temporel strict en Python (élimine le passé)
+        filtered_docs = []
+        for doc in raw_docs:
+            date_start_str = doc.metadata.get('date_start', '')
+            if not date_start_str:
+                continue
+                
+            try:
+                event_date = dateutil.parser.isoparse(date_start_str).date()
+                # On ne garde que le présent et le futur
+                if event_date >= current_date:
+                    filtered_docs.append(doc)
+            except Exception:
+                pass
+                
+        # 3. On sélectionne les 3 meilleurs événements FUTURS
+        final_docs = filtered_docs[:3]
+        
+        # Si aucun document futur n'est trouvé, on passe un contexte vide
+        context_text = self._format_docs(final_docs) if final_docs else "Aucun événement futur disponible dans la base."
+        
+        # 4. On passe manuellement nos documents filtrés à la chaîne LLM simple
+        answer = self.qa_chain.invoke({
+            "context": context_text, 
             "question": question,
-            "date_du_jour": current_date
+            "date_du_jour": formatted_current_date
         })
-
-        # Récupération séparée des sources pour la traçabilité
-        source_docs = self.retriever.invoke(question)
 
         return {
             "question": question,
             "answer": answer,
-            "sources": source_docs
+            "sources": final_docs
         }
-
-if __name__ == "__main__":
-    # Test simple en ligne de commande
-    bot = PulsEventsChatbot()
-    print("\n" + "="*50)
-    
-    query = "Je cherche un concert de jazz à Paris."
-    print(f"👤 Utilisateur : {query}\n")
-    
-    result = bot.ask(query)
-    
-    print(f"🤖 Puls-Events Bot :\n{result['answer']}\n")
-    print("-" * 50)
-    print("📚 Sources utilisées :")
-    for doc in result['sources']:
-        print(f"- {doc.metadata.get('title')} ({doc.metadata.get('city')})")
