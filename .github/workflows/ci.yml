@@ -1,0 +1,168 @@
+name: CI - Puls-Events RAG
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Tests unitaires et couverture
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov httpx
+
+      - name: Vérifier les fichiers critiques
+        run: |
+          test -f requirements.txt
+          test -f Dockerfile
+          test -f test_env.py
+          test -f tests/test_data_pipeline.py
+          test -f api/main.py
+          test -f src/indexing/faiss_indexer.py
+          test -f src/rag/chatbot.py
+          test -f data/evenements_clean.csv
+          echo "✅ Tous les fichiers critiques sont présents"
+
+      - name: Lancer les tests unitaires avec couverture
+        run: |
+          pytest \
+            test_env.py \
+            tests/test_data_pipeline.py \
+            --cov=src \
+            --cov=api \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-fail-under=60
+
+      - name: Upload rapports de couverture
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage.xml
+            htmlcov/
+
+  api-tests:
+    name: Build FAISS et tests API
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    env:
+      PYTHONPATH: .
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install requests httpx
+
+      - name: Construire l'index FAISS à partir des fichiers versionnés
+        run: |
+          test -f data/evenements_clean.csv
+          python -m src.indexing.faiss_indexer
+          test -f data/faiss_index/index.faiss
+          test -f data/faiss_index/index.pkl
+          echo "✅ Index FAISS construit avec succès"
+
+      - name: Démarrer l'API FastAPI
+        run: |
+          uvicorn api.main:app --host 0.0.0.0 --port 8000 > api.log 2>&1 &
+          sleep 25
+          cat api.log
+
+      - name: Vérifier la disponibilité de l'API
+        run: |
+          curl --fail http://localhost:8000/health
+          curl --fail http://localhost:8000/docs
+          curl --fail http://localhost:8000/openapi.json
+
+      - name: Exécuter les tests fonctionnels API
+        run: |
+          python api/api_test.py
+
+      - name: Upload logs API
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-logs
+          path: api.log
+
+  docker-tests:
+    name: Build et smoke test Docker
+    runs-on: ubuntu-latest
+    needs: api-tests
+
+    steps:
+      - name: Checkout du dépôt
+        uses: actions/checkout@v4
+
+      - name: Build de l'image Docker
+        run: |
+          docker build -t puls-events-rag .
+
+      - name: Lancer le conteneur Docker
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: |
+          docker run -d --name puls-events-rag-ci -p 8000:8000 \
+            -e MISTRAL_API_KEY="$MISTRAL_API_KEY" \
+            puls-events-rag
+          sleep 30
+          docker logs puls-events-rag-ci
+
+      - name: Smoke test du conteneur
+        run: |
+          curl --fail http://localhost:8000/health
+
+      - name: Nettoyer le conteneur
+        if: always()
+        run: |
+          docker stop puls-events-rag-ci || true
+          docker rm puls-events-rag-ci || true

@@ -21,7 +21,5 @@ COPY . /app/
 # 6. Port exposé (FastAPI / Uvicorn)
 EXPOSE 8000
 
-# 7. Commande de démarrage :
-#    - reconstruction de l'index FAISS (si besoin)
-#    - lancement de l'API FastAPI
-CMD ["/bin/sh", "-c", "python -m src.indexing.faiss_indexer && uvicorn api.main:app --host 0.0.0.0 --port 8000"]
+# 7. Commande de démarrage : lancement direct de l'API
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

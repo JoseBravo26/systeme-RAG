@@ -1,16 +1,33 @@
 # Environnements virtuels
 env/
 venv/
+.venv/
 .env
 
-# Fichiers de cache Python
+# Cache Python
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Fichiers de données (à ajouter si volumineux)
-data/
-*.csv
-*.json
+# Fichiers système / éditeur
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Données générées / artefacts lourds
+data/faiss_index/
 *.faiss
 *.pkl
+eval/results/
+
+# Garder les données d'entrée versionnées
+!data/evenements_clean.csv
+
+# Fichiers JSON générés uniquement
+*.json
+!package-lock.json
+!openapi.json
