@@ -1,0 +1,22 @@
+[run]
+branch = True
+source =
+    src
+    api
+omit =
+    */__pycache__/*
+    */tests/*
+    */test_*.py
+    */api/api_test.py
+
+[report]
+omit =
+    */__pycache__/*
+    */tests/*
+    */test_*.py
+    */api/api_test.py
+show_missing = True
+skip_empty = True
+
+[html]
+directory = htmlcov
