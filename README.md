@@ -1,382 +1,365 @@
-# Projet 8 - Système RAG Puls-Events
+# Projet 8 — Système RAG Puls-Events
 
-API de recommandation d'événements culturels basée sur un système **RAG** (*Retrieval-Augmented Generation*) avec **FAISS**, **LangChain**, **Mistral AI** et **FastAPI**.
+POC d’un assistant conversationnel de recommandation d’événements culturels.  
+Il s’appuie sur les données OpenAgenda, une recherche sémantique locale avec FAISS et les modèles Mistral AI pour répondre à des questions en langage naturel.
 
-L'objectif du projet est de permettre à un utilisateur de poser une question en langage naturel sur des événements culturels, puis de recevoir une réponse augmentée à partir des données indexées dans une base vectorielle.
+## Objectif métier
 
----
+Puls-Events permet à un utilisateur de trouver plus facilement des événements culturels sans avoir à parcourir manuellement une liste d’annonces.
 
-## Sommaire
+Exemple de question :
 
-- [Vue d'ensemble](#vue-densemble)
-- [Architecture du projet](#architecture-du-projet)
-- [Fonctionnalités](#fonctionnalités)
-- [Prérequis](#prérequis)
-- [Installation locale](#installation-locale)
-- [Configuration des variables d'environnement](#configuration-des-variables-denvironnement)
-- [Construction de l'index vectoriel](#construction-de-lindex-vectoriel)
-- [Lancement de l'API en local](#lancement-de-lapi-en-local)
-- [Documentation Swagger](#documentation-swagger)
-- [Tests fonctionnels](#tests-fonctionnels)
-- [Évaluation du système RAG](#évaluation-du-système-rag)
-- [Exécution avec Docker](#exécution-avec-docker)
-- [Démonstration soutenance](#démonstration-soutenance)
-- [Structure du projet](#structure-du-projet)
+> « Y a-t-il un événement mêlant cinéma et jazz à Paris le 1er août 2026 ? »
 
----
+Le système recherche d’abord des événements pertinents dans l’index, applique des filtres de date, de ville et de thème, puis génère une réponse fondée sur les informations récupérées.
 
-## Vue d'ensemble
+## Fonctionnement RAG
 
-Ce projet met en œuvre un pipeline complet de recommandation d'événements :
+RAG signifie *Retrieval-Augmented Generation*, ou génération augmentée par récupération.
 
-1. ingestion et nettoyage des données événements,
-2. génération d'embeddings via Mistral AI,
-3. indexation vectorielle dans FAISS,
-4. recherche sémantique des événements pertinents,
-5. génération d'une réponse naturelle via un LLM,
-6. exposition du système via une API REST FastAPI,
-7. exécution locale via Docker.
+```text
+Données OpenAgenda
+        |
+        v
+Nettoyage et préparation des événements
+        |
+        v
+Embeddings Mistral + index vectoriel FAISS
+        |
+        v
+Question utilisateur
+        |
+        v
+Recherche sémantique + filtres métier
+(date, ville, département, thème)
+        |
+        v
+LLM Mistral : réponse naturelle basée sur le contexte
+        |
+        v
+API FastAPI
+```
 
-Le chatbot répond à des requêtes du type :
+Cette approche réduit le risque d’inventer des événements : le chatbot est invité à répondre uniquement à partir du contexte récupéré.
 
-- « Quels sont les concerts gratuits à Paris ce mois-ci ? »
-- « Quels sont les événements à Paris en septembre ? »
-- « Je cherche une exposition pour enfants en Seine-Saint-Denis »
+## Technologies utilisées
 
----
-
-## Architecture du projet
-
-Le système repose sur les briques suivantes :
-
-- **FAISS** : index vectoriel pour la recherche sémantique.
-- **Mistral Embeddings** : vectorisation des événements.
-- **Mistral LLM** : génération de réponses naturelles.
-- **LangChain** : orchestration entre récupération contextuelle et génération.
-- **FastAPI** : exposition des endpoints REST.
-- **Docker** : exécution portable et locale du projet.
-
----
+- **Python 3.11**
+- **OpenAgenda** : source des données d’événements
+- **Pandas** : préparation et nettoyage des données
+- **Mistral AI** : embeddings et génération des réponses
+- **LangChain** : orchestration du pipeline RAG
+- **FAISS** : index vectoriel local et recherche sémantique
+- **FastAPI** : API REST
+- **Docker** : exécution portable du service
+- **Pytest** : tests unitaires
+- **Ragas** : évaluation de la qualité du système RAG
+- **GitHub Actions** : intégration continue et test manuel du chatbot
 
 ## Fonctionnalités
 
-### Chatbot RAG
-
-- Recherche sémantique dans les événements indexés.
-- Réponses naturelles basées sur le contexte récupéré.
-- Filtrage des événements passés.
-- Priorisation des événements correspondant à la période demandée.
-- Proposition d'alternatives si aucun événement ne correspond exactement à la période demandée.
-
-### API REST
-
-- `GET /health` : vérifie l'état du service.
-- `POST /ask` : pose une question au chatbot.
-- `POST /rebuild` : reconstruit l'index vectoriel à la demande.
-- `GET /docs` : documentation Swagger générée automatiquement.
-
-### Évaluation
-
-- Jeu de test annoté.
-- Évaluation automatique avec **Ragas**.
-- Mesures de fidélité et de précision du contexte.
-
----
+- Recherche sémantique dans les événements indexés
+- Réponses en langage naturel à partir des données récupérées
+- Filtrage des événements passés
+- Prise en compte de la ville, du département et de la période demandée
+- Priorité aux événements correspondant exactement à la période recherchée
+- Proposition d’alternatives seulement lorsqu’aucun événement ne correspond à la demande
+- API REST documentée automatiquement avec Swagger
+- Reconstruction de l’index à la demande
+- Exécution locale avec Docker
 
 ## Prérequis
 
-Avant de lancer le projet, vérifier les éléments suivants :
-
-- Python 3.10 ou 3.11
-- Docker Desktop installé
+- Python 3.11 recommandé
+- Docker Desktop, pour l’exécution conteneurisée
 - Une clé API Mistral valide
-- Un fichier de données nettoyé dans `data/evenements_clean.csv`
+- Le fichier `data/evenements_clean.csv` pour reconstruire l’index FAISS
 
----
+> Le fichier source `data/evenements_clean.csv` n’est pas versionné dans Git.  
+> En revanche, l’index FAISS préconstruit est fourni dans `data/faiss_index/` pour pouvoir lancer l’API sans reconstruire l’index.
 
 ## Installation locale
 
-### 1. Cloner le projet
+### Cloner le dépôt
 
 ```bash
-git clone <url-du-repo>
-cd projet-rag
+git clone https://github.com/JoseBravo26/systeme-RAG.git
+cd systeme-RAG
 ```
 
-### 2. Créer un environnement virtuel
+### Créer l’environnement virtuel
+
+Sous Windows PowerShell :
+
+```powershell
+python -m venv env
+.\env\Scripts\Activate.ps1
+```
+
+Sous macOS ou Linux :
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv env
+source env/bin/activate
 ```
 
-Sur Windows (Git Bash) :
-
-```bash
-python -m venv .venv
-source .venv/Scripts/activate
-```
-
-### 3. Installer les dépendances
+### Installer les dépendances
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
-
-## Configuration des variables d'environnement
+## Variables d’environnement
 
 Créer un fichier `.env` à la racine du projet :
 
 ```env
 MISTRAL_API_KEY=votre_cle_api_mistral
+MISTRAL_BASE_URL=https://api.mistral.ai/v1
+MISTRAL_CHAT_MODEL=open-mistral-nemo
+MISTRAL_EMBED_MODEL=mistral-embed
 ```
 
-Ne jamais versionner ce fichier dans Git.
+Le fichier `.env` ne doit jamais être envoyé sur GitHub.
 
----
+## Construire l’index FAISS
 
-## Construction de l'index vectoriel
+Cette étape est nécessaire uniquement si :
 
-Le projet inclut un script de construction de l'index vectoriel basé sur les événements nettoyés.
+- l’index n’existe pas encore ;
+- le fichier `data/evenements_clean.csv` a changé ;
+- vous souhaitez mettre à jour les événements indexés.
 
-### Commande recommandée
+Exécuter depuis la racine du projet :
 
 ```bash
 python -m src.indexing.faiss_indexer
 ```
 
-Cette commande :
+Le script :
 
-- charge le fichier `data/evenements_clean.csv`,
-- crée les documents LangChain,
-- segmente les contenus en chunks,
-- génère les embeddings avec Mistral,
-- construit et sauvegarde l'index FAISS dans `data/faiss_index/`.
+1. charge les événements nettoyés ;
+2. crée des documents avec leurs métadonnées ;
+3. génère les embeddings avec Mistral ;
+4. construit l’index FAISS ;
+5. sauvegarde l’index dans `data/faiss_index/`.
 
-### Résultat attendu
+Les fichiers attendus sont :
 
-Après exécution, le dossier suivant doit exister :
-
-```bash
-data/faiss_index/
+```text
+data/faiss_index/index.faiss
+data/faiss_index/index.pkl
 ```
 
-avec notamment :
+## Lancer l’API sans Docker
 
-- `index.faiss`
-- `index.pkl`
+```bash
+uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
 
----
-
-## Lancement de l'API en local
-
-L'API FastAPI peut être lancée sans Docker avec :
+Pour le développement, avec rechargement automatique :
 
 ```bash
 uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Une fois démarrée, l'API est accessible à l'adresse :
+Accéder ensuite à Swagger :
 
-```bash
-http://localhost:8000
+```text
+http://127.0.0.1:8000/docs
 ```
 
----
+## Lancer avec Docker
 
-## Documentation Swagger
-
-FastAPI génère automatiquement une documentation interactive disponible ici :
+### Construire l’image
 
 ```bash
-http://localhost:8000/docs
+docker build -t puls-events-rag:1.0 .
 ```
 
-La spécification OpenAPI est également disponible ici :
+### Démarrer l’API
 
 ```bash
-http://localhost:8000/openapi.json
+docker run --rm --name puls-events-api --env-file .env -p 8000:8000 puls-events-rag:1.0
 ```
 
----
+Puis ouvrir :
 
-## Exemples d'utilisation de l'API
+- Swagger : http://127.0.0.1:8000/docs
+- Health check : http://127.0.0.1:8000/health
+- Spécification OpenAPI : http://127.0.0.1:8000/openapi.json
 
-### Vérifier l'état du service
+Si le port 8000 est occupé :
 
 ```bash
-curl http://localhost:8000/health
+docker run --rm --name puls-events-api --env-file .env -p 8001:8000 puls-events-rag:1.0
+```
+
+Swagger sera alors disponible sur `http://127.0.0.1:8001/docs`.
+
+## Endpoints API
+
+### `GET /health`
+
+Vérifie que l’API et le chatbot sont prêts.
+
+```bash
+curl http://127.0.0.1:8000/health
 ```
 
 Réponse attendue :
 
 ```json
 {
-  "status": "ready"
+  "status": "ready",
+  "rebuilding": false
 }
 ```
 
-### Poser une question au chatbot
+### `POST /ask`
+
+Envoie une question au chatbot.
 
 ```bash
-curl -X POST http://localhost:8000/ask \
+curl -X POST http://127.0.0.1:8000/ask \
   -H "Content-Type: application/json" \
-  -d '{
-    "question": "Quels sont les concerts gratuits à Paris ce mois-ci ?"
-  }'
+  -d "{\"question\": \"Que se passe-t-il à Paris le 12 août 2026 autour de l’astronomie ?\"}"
 ```
 
-### Reconstruire l'index
+La réponse contient :
+
+- la question envoyée ;
+- une réponse générée par le chatbot ;
+- les sources utilisées, avec le titre et la ville des événements.
+
+### `POST /rebuild`
+
+Reconstruit l’index FAISS et recharge le chatbot.
+
+> Cette opération peut être longue et nécessite le fichier local `data/evenements_clean.csv`.
 
 ```bash
-curl -X POST http://localhost:8000/rebuild \
+curl -X POST http://127.0.0.1:8000/rebuild \
   -H "Content-Type: application/json" \
-  -d '{
-    "csv_path": "data/evenements_clean.csv",
-    "index_path": "data/faiss_index",
-    "max_chunks": null
-  }'
+  -d "{\"csv_path\": \"data/evenements_clean.csv\", \"index_path\": \"data/faiss_index\", \"max_chunks\": null}"
 ```
 
----
+## Tests
 
-## Tests fonctionnels
+### Tests unitaires
 
-Le projet inclut un script de test de l'API :
+```bash
+pytest -q
+```
+
+Les tests unitaires vérifient notamment :
+
+- le nettoyage des données ;
+- l’interprétation des dates et villes ;
+- le filtrage métier par thème, période et localisation.
+
+Ils sont conçus pour ne pas appeler Mistral ni charger l’index FAISS.[file:113][file:114]
+
+### Tests fonctionnels de l’API
+
+Démarrer d’abord l’API, puis dans un second terminal :
 
 ```bash
 python api/api_test.py
 ```
 
-Ce script permet de tester :
+Le script vérifie le health check, les requêtes `/ask`, la validation des entrées et l’accès à la documentation Swagger.
 
-- la disponibilité de l'API,
-- la génération de réponse sur `/ask`,
-- la validation des entrées,
-- l'accès à Swagger,
-- la robustesse générale du service.
+## Évaluation RAG
 
----
+Le script d’évaluation utilise un jeu de test annoté situé dans :
 
-## Évaluation du système RAG
+```text
+eval/test_set.csv
+```
 
-Le projet inclut un script d'évaluation automatique :
+Lancer l’évaluation :
 
 ```bash
 python eval/evaluate_rag.py
 ```
 
-Il s'appuie sur un jeu de test annoté :
+Les métriques Ragas utilisées sont :
 
-```bash
-eval/test_set.csv
+- **Faithfulness** : vérifie que la réponse reste fidèle aux informations présentes dans le contexte récupéré.
+- **Context Precision** : vérifie que les documents récupérés sont pertinents pour la question.
+
+Les résultats détaillés sont enregistrés dans :
+
+```text
+eval/results/ragas_scores.csv
 ```
 
-### Métriques utilisées
+## Scénarios de démonstration
 
-- **Faithfulness**
-- **Context Precision**
+Pour une démonstration, utiliser des questions déjà couvertes par les tests :
 
-Les résultats sont sauvegardés dans :
+1. `Y a-t-il un événement mêlant cinéma et jazz à Paris le 1er août 2026 ?`
+2. `Existe-t-il une visite des coulisses du Grand Rex à Paris en septembre 2026 ?`
+3. `Que se passe-t-il à Paris le 12 août 2026 autour de l’astronomie ?`
 
-```bash
-eval/results/
-```
+Déroulé conseillé :
 
----
+1. lancer le conteneur Docker avant la démonstration ;
+2. ouvrir Swagger sur `/docs` ;
+3. vérifier `/health` ;
+4. envoyer une question sur `/ask` ;
+5. montrer la réponse et les sources associées ;
+6. expliquer que FAISS recherche les événements et que Mistral rédige la réponse.
 
-## Exécution avec Docker
+## Sécurité et limites
 
-### Construire l'image Docker
+- La clé Mistral est stockée dans `.env`, exclu de Git.
+- L’index FAISS est local, mais l’application nécessite l’API Mistral pour créer les embeddings de requêtes et générer les réponses.
+- L’endpoint `/rebuild` doit être protégé par authentification dans une version accessible publiquement.
+- Une limite de requêtes, HTTPS, CORS restrictif et une supervision devraient être ajoutés avant une mise en production.
+- Cette version ne conserve pas encore l’historique conversationnel.
 
-```bash
-docker build -t puls-events-rag .
-```
+## Améliorations envisagées
 
-### Lancer le conteneur
-
-```bash
-docker run -p 8000:8000 --env-file .env puls-events-rag
-```
-
-### Vérifier le bon fonctionnement
-
-Ouvrir dans le navigateur :
-
-- Swagger UI : [http://localhost:8000/docs](http://localhost:8000/docs)
-- Healthcheck : [http://localhost:8000/health](http://localhost:8000/health)
-
-Si le port 8000 est déjà utilisé, lancer :
-
-```bash
-docker run -p 8001:8000 --env-file .env puls-events-rag
-```
-
-et utiliser ensuite :
-
-- [http://localhost:8001/docs](http://localhost:8001/docs)
-- [http://localhost:8001/health](http://localhost:8001/health)
-
----
-
-## Démonstration soutenance
-
-### Déroulé conseillé
-
-1. Montrer la structure générale du projet.
-2. Expliquer rapidement le fonctionnement du pipeline RAG.
-3. Lancer l'application avec Docker.
-4. Ouvrir `/docs` pour présenter les endpoints.
-5. Tester `/health`.
-6. Tester `/ask` avec une ou deux questions métiers.
-7. Expliquer que `/rebuild` permet de reconstruire l'index si nécessaire.
-8. Mentionner l'évaluation automatique avec Ragas.
-
-### Questions de démonstration recommandées
-
-- « Quels sont les concerts gratuits à Paris ce mois-ci ? »
-- « Quels sont les événements à Paris en septembre ? »
-- « Je cherche une activité culturelle gratuite à Paris »
-
----
+- Mise à jour planifiée des événements depuis OpenAgenda
+- Filtres enrichis : gratuité, accessibilité, catégorie, distance et horaires
+- Interface web destinée aux utilisateurs finaux
+- Historique conversationnel
+- Suivi de la latence, des erreurs, des coûts et des requêtes sans réponse
+- Jeu de test annoté plus large et suivi des métriques dans le temps
 
 ## Structure du projet
 
-```bash
+```text
 .
 ├── api/
 │   ├── api_test.py
 │   └── main.py
 ├── data/
-│   ├── evenements_clean.csv
 │   └── faiss_index/
+│       ├── index.faiss
+│       └── index.pkl
 ├── eval/
 │   ├── evaluate_rag.py
 │   ├── test_set.csv
 │   └── results/
-├── notebooks/
-│   └── eda_events.py
 ├── src/
 │   ├── indexing/
-│   │   ├── embedder.py
 │   │   └── faiss_indexer.py
+│   ├── ingestion/
+│   │   └── data_pipeline.py
 │   └── rag/
 │       └── chatbot.py
+├── tests/
+│   ├── test_chatbot.py
+│   └── test_data_pipeline.py
+├── .github/workflows/
 ├── Dockerfile
 ├── README.md
-├── README_API.md
-├── requirements.txt
-└── test_env.py
+└── requirements.txt
 ```
 
----
-
-## Remarques finales
-
-- Le projet est conçu comme un **POC démontrable en local**.
-- L'historique conversationnel n'est pas utilisé dans cette version.
-- Le endpoint `/rebuild` peut être protégé si l'application devait être exposée publiquement.
-- Pour la soutenance, il est recommandé d'avoir déjà généré l'index FAISS avant de lancer la démonstration en direct.
-
+## Auteur
+José Bravo
+Projet réalisé dans le cadre du parcours OpenClassrooms — Projet 8 : conception et déploiement d’un système RAG.
