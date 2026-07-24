@@ -1,0 +1,155 @@
+name: Validation manuelle du chatbot RAG
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_rebuild_test:
+        description: "Reconstruire l'index via /rebuild (long et coûteux)"
+        required: true
+        default: false
+        type: boolean
+
+      run_ragas_evaluation:
+        description: "Lancer l'évaluation Ragas"
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: chatbot-manual-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test-chatbot-reel:
+    name: API Docker et chatbot réel
+    runs-on: ubuntu-latest
+
+    # GitHub injecte la valeur du secret uniquement pendant le job.
+    env:
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      MISTRAL_BASE_URL: https://api.mistral.ai/v1
+      MISTRAL_CHAT_MODEL: open-mistral-nemo
+      MISTRAL_EMBED_MODEL: mistral-embed
+      API_BASE_URL: http://127.0.0.1:8000
+      RUN_REBUILD_TEST: ${{ inputs.run_rebuild_test }}
+
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v4
+
+      - name: Vérification des fichiers nécessaires
+        run: |
+          test -f requirements.txt
+          test -f Dockerfile
+          test -f api/main.py
+          test -f api/api_test.py
+          test -f data/faiss_index/index.faiss
+          test -f data/faiss_index/index.pkl
+
+      - name: Construction de l'image Docker
+        run: |
+          docker build -t puls-events-rag:manual .
+
+      - name: Démarrage de l'API Docker
+        run: |
+          docker run -d \
+            --name puls-events-api \
+            --env MISTRAL_API_KEY \
+            --env MISTRAL_BASE_URL \
+            --env MISTRAL_CHAT_MODEL \
+            --env MISTRAL_EMBED_MODEL \
+            -p 8000:8000 \
+            puls-events-rag:manual
+
+      - name: Attente de l'API prête
+        run: |
+          for attempt in {1..40}; do
+            response=$(curl --silent http://127.0.0.1:8000/health || true)
+
+            echo "Tentative ${attempt}/40 : ${response}"
+
+            if echo "${response}" | grep -q '"status":"ready"'; then
+              echo "Le chatbot est prêt."
+              exit 0
+            fi
+
+            sleep 3
+          done
+
+          echo "Le chatbot n'est pas devenu prêt à temps."
+          docker logs puls-events-api
+          exit 1
+
+      - name: Installation de Python pour les tests API
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Installation des dépendances de test
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Tests fonctionnels de l'API
+        run: |
+          python api/api_test.py
+
+      - name: Logs du conteneur
+        if: always()
+        run: |
+          docker logs puls-events-api || true
+
+      - name: Arrêt du conteneur
+        if: always()
+        run: |
+          docker rm -f puls-events-api || true
+
+  evaluation-ragas:
+    name: Évaluation Ragas
+    runs-on: ubuntu-latest
+    needs: test-chatbot-reel
+    if: ${{ inputs.run_ragas_evaluation }}
+
+    env:
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      MISTRAL_BASE_URL: https://api.mistral.ai/v1
+      MISTRAL_CHAT_MODEL: open-mistral-nemo
+      MISTRAL_EMBED_MODEL: mistral-embed
+      RAGAS_EVAL_MODEL: open-mistral-nemo
+      RAGAS_EMBED_MODEL: mistral-embed
+
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installation de Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Vérification des prérequis Ragas
+        run: |
+          test -f eval/evaluate_rag.py
+          test -f eval/test_set.csv
+          test -f data/faiss_index/index.faiss
+          test -f data/faiss_index/index.pkl
+
+      - name: Évaluation de la qualité RAG
+        run: |
+          python eval/evaluate_rag.py
+
+      - name: Publication des scores Ragas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragas-scores-${{ github.run_number }}
+          path: eval/results/ragas_scores.csv
+          if-no-files-found: warn
+          retention-days: 30

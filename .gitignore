@@ -25,7 +25,7 @@ data/faiss_index/
 eval/results/
 
 # Garder les données d'entrée versionnées
-!data/evenements_clean.csv
+!data/
 
 # Fichiers JSON générés uniquement
 *.json

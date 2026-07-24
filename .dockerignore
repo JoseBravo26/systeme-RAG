@@ -1,0 +1,28 @@
+# Secrets
+.env
+
+# Environnements Python locaux
+env/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# Git et IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Résultats et caches
+.pytest_cache/
+.coverage
+htmlcov/
+eval/results/
+
+# Index FAISS généré localement : monté comme volume Docker.
+data/faiss_index/
+
+# Fichiers système
+.DS_Store
+Thumbs.db

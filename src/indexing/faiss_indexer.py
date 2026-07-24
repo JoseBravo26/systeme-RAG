@@ -210,7 +210,7 @@ if __name__ == "__main__":
 
     # 3. Limitation optionnelle pour tests rapides / économie de crédits
     # Décommente la ligne suivante si besoin :
-    chunks = chunks[:300]
+    #chunks = chunks[:300] #Limite à 300 chunks pour tests rapides si besoin
 
     # 4. Construction de l'index
     db = build_faiss_index(chunks, save_dir=index_path)

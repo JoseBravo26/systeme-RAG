@@ -1,20 +1,24 @@
 [run]
 branch = True
+relative_files = True
 source =
     src
-    api
 omit =
     */__pycache__/*
     */tests/*
     */test_*.py
-    */api/api_test.py
+    */api/*
+    */htmlcov/*
+    */.venv/*
 
 [report]
 omit =
     */__pycache__/*
     */tests/*
     */test_*.py
-    */api/api_test.py
+    */api/*
+    */htmlcov/*
+    */.venv/*
 show_missing = True
 skip_empty = True
 
