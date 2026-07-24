@@ -18,16 +18,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Données générées / artefacts lourds
-data/faiss_index/
-*.faiss
-*.pkl
-eval/results/
-
 # Garder les données d'entrée versionnées
-!data/
-
-# Fichiers JSON générés uniquement
-*.json
-!package-lock.json
-!openapi.json
+data/evenements_clean.csv
