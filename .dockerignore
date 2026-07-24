@@ -20,9 +20,6 @@ __pycache__/
 htmlcov/
 eval/results/
 
-# Index FAISS généré localement : monté comme volume Docker.
-data/faiss_index/
-
 # Fichiers système
 .DS_Store
 Thumbs.db
