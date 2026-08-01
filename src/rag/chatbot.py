@@ -27,7 +27,7 @@ load_dotenv()
 
 
 class PulsEventsChatbot:
-    """
+    """    
     Chatbot RAG pour recommander des événements culturels à partir
     d'un index vectoriel FAISS.
     """
@@ -110,8 +110,7 @@ class PulsEventsChatbot:
     }
 
     def __init__(self, index_path: str = "data/faiss_index") -> None:
-        """
-        Initialise les modèles Mistral, l'index FAISS et la chaîne RAG.
+        """        Initialise les modèles Mistral, l'index FAISS et la chaîne RAG.
         """
         self.index_path = index_path
         self._load_models_and_index()
@@ -122,8 +121,7 @@ class PulsEventsChatbot:
     # ------------------------------------------------------------------
 
     def _load_models_and_index(self) -> None:
-        """
-        Charge le modèle génératif, les embeddings et l'index FAISS.
+        """        Charge le modèle génératif, les embeddings et l'index FAISS.
         """
         api_key = os.getenv("MISTRAL_API_KEY")
         base_url = os.getenv("MISTRAL_BASE_URL", "https://api.mistral.ai/v1")
@@ -135,11 +133,13 @@ class PulsEventsChatbot:
                 "La variable d'environnement MISTRAL_API_KEY est manquante."
             )
 
+        # LLM génératif utilisé pour formater la réponse finale.
+        # Température à 0.0 pour limiter les variations et les hallucinations.
         self.llm = ChatOpenAI(
             api_key=api_key,
             base_url=base_url,
             model=chat_model,
-            temperature=0.1,
+            temperature=0.0,
             max_tokens=512,
         )
 
@@ -155,7 +155,7 @@ class PulsEventsChatbot:
 
         if not os.path.isdir(index_dir):
             raise FileNotFoundError(
-                f"Répertoire d'index FAISS introuvable : {index_dir}.\n"
+                f"Répertoire d'index FAISS introuvable : {index_dir}."
                 "Assure-toi d'avoir exécuté le script d'indexation."
             )
 
@@ -166,8 +166,7 @@ class PulsEventsChatbot:
         )
 
     def _build_chain(self) -> None:
-        """
-        Construit une chaîne de réponse avec garde-fous anti-hallucination.
+        """        Construit une chaîne de réponse avec garde-fous anti-hallucination.
         """
         template = """
 Tu es l'assistant culturel virtuel de Puls-Events.
@@ -178,22 +177,26 @@ UNIQUEMENT à partir du contexte fourni.
 
 RÈGLES ABSOLUES :
 1. Toute information factuelle dans ta réponse doit être présente explicitement
-dans le contexte : nom d'événement, ville, date, horaire et description.
+   dans le contexte : nom d'événement, ville, date, horaire et description.
 
 2. Ne cite, n'invente, ne suggère et ne décris JAMAIS un événement absent
-du contexte. N'utilise aucune connaissance externe.
+   du contexte. N'utilise aucune connaissance externe.
 
 3. Si le contexte indique qu'aucun événement n'a été trouvé, réponds :
-"Je n'ai pas trouvé d'événement correspondant dans la base de données
-pour cette demande."
-Tu peux inviter l'utilisateur à élargir sa recherche à une autre date,
-une autre ville ou un autre thème, sans citer d'événement précis.
+   "Je n'ai pas trouvé d'événement correspondant dans la base de données
+   pour cette demande."
+   Tu peux inviter l'utilisateur à élargir sa recherche à une autre date,
+   une autre ville ou un autre thème, sans citer d'événement précis.
 
 4. Si des événements sont présents dans le contexte, ne propose que ceux-ci.
-Respecte leurs dates et leurs villes réelles.
+   Respecte leurs dates et leurs villes réelles.
 
 5. N'affirme une caractéristique pratique ou un public visé que si cette
-information apparaît clairement dans le contexte.
+   information apparaît clairement dans le contexte.
+
+6. Si une information n'est pas précisée dans le contexte (horaire exact,
+   tarif, public visé), indique simplement qu'elle n'est pas détaillée
+   plutôt que de la deviner.
 
 FORMAT :
 - Commence par une phrase courte et naturelle.
@@ -219,8 +222,7 @@ Réponse :
     # ------------------------------------------------------------------
 
     def _extract_constraints(self, question: str) -> Dict[str, Any]:
-        """
-        Extrait les contraintes de zone et de période de la question.
+        """        Extrait les contraintes de zone et de période de la question.
         """
         normalized_question = question.lower()
         today = datetime.now().date()
@@ -232,7 +234,7 @@ Réponse :
             city = "Paris"
 
         if (
-            re.search(r"\b93\b", normalized_question)
+            re.search(r"93", normalized_question)
             or "seine-saint-denis" in normalized_question
             or "seine saint denis" in normalized_question
         ):
@@ -249,9 +251,9 @@ Réponse :
 
         # Cas : "le 24 juillet 2026" ou "1er août 2026".
         date_pattern = (
-            r"\b(?:le\s+)?(\d{1,2}|1er)\s+("
+            r"(?:le\s+)?(\d{1,2}|1er)\s+("
             + "|".join(self.MONTHS.keys())
-            + r")\s+(20\d{2})\b"
+            + r")\s+(20\d{2})"
         )
         exact_match = re.search(date_pattern, normalized_question)
 
@@ -266,9 +268,8 @@ Réponse :
                 end_date = start_date
             except ValueError:
                 pass
-
-        # Cas : "en août", "en septembre".
-        elif True:
+        else:
+            # Cas : "en août", "en septembre".
             for month_name, month_number in self.MONTHS.items():
                 if f"en {month_name}" in normalized_question:
                     year = today.year
@@ -297,8 +298,7 @@ Réponse :
         }
 
     def _requested_topics(self, question: str) -> List[str]:
-        """
-        Détecte les thèmes explicitement demandés dans une question.
+        """        Détecte les thèmes explicitement demandés dans une question.
         """
         normalized_question = question.lower()
         requested_topics: List[str] = []
@@ -310,8 +310,7 @@ Réponse :
         return requested_topics
 
     def _document_searchable_text(self, doc: Any) -> str:
-        """
-        Crée un texte exploitable à partir du chunk et de ses métadonnées.
+        """        Crée un texte exploitable à partir du chunk et de ses métadonnées.
         """
         metadata = getattr(doc, "metadata", {}) or {}
 
@@ -325,24 +324,39 @@ Réponse :
         return " ".join(str(value) for value in values if value).lower()
 
     def _matches_topic(self, doc: Any, question: str) -> bool:
-        """
-        Vérifie qu'un document correspond à tous les thèmes demandés.
+        """        Vérifie qu'un document correspond aux thèmes demandés.
 
-        Exemple : une requête "cinéma et jazz" doit contenir au moins un
-        mot-clé de cinéma ET un mot-clé de jazz.
+        - Pour une requête avec plusieurs thèmes explicites (ex. "cinéma et jazz"),
+          le document doit contenir au moins un mot-clé de CHAQUE thème.
+        - Pour une requête avec un seul thème ou aucun thème détecté, le filtrage
+          reste souple : on ne rejette pas le document uniquement sur la base
+          des mots-clés, on laisse FAISS décider de la pertinence sémantique.
         """
         requested_topics = self._requested_topics(question)
 
+        # Aucun thème explicite : on laisse passer tous les documents.
         if not requested_topics:
             return True
 
         document_text = self._document_searchable_text(doc)
 
-        for topic in requested_topics:
-            keywords = self.TOPIC_KEYWORDS[topic]
+        # Requête multi-thème : logique AND stricte.
+        if len(requested_topics) > 1:
+            for topic in requested_topics:
+                keywords = self.TOPIC_KEYWORDS.get(topic, [])
+                if keywords and not any(keyword in document_text for keyword in keywords):
+                    return False
+            return True
 
-            if not any(keyword in document_text for keyword in keywords):
-                return False
+        # Requête à un seul thème : logique souple.
+        # Si au moins un mot-clé apparaît, on considère que le document matche.
+        # Sinon, on ne l'élimine pas : la similarité sémantique de FAISS
+        # reste le critère principal.
+        single_topic = requested_topics[0]
+        keywords = self.TOPIC_KEYWORDS.get(single_topic, [])
+
+        if keywords and any(keyword in document_text for keyword in keywords):
+            return True
 
         return True
 
@@ -351,8 +365,7 @@ Réponse :
     # ------------------------------------------------------------------
 
     def _get_all_index_documents(self) -> List[Any]:
-        """
-        Retourne tous les chunks stockés dans le docstore FAISS.
+        """        Retourne tous les chunks stockés dans le docstore FAISS.
 
         Cette méthode n'est utilisée qu'en solution de repli lorsque la
         recherche vectorielle ne renvoie aucun document conforme.
@@ -375,8 +388,7 @@ Réponse :
         start_filter: Optional[date],
         end_filter: Optional[date],
     ) -> List[Any]:
-        """
-        Applique les règles métier aux documents candidats.
+        """        Applique les règles métier aux documents candidats.
 
         Les filtres portent sur la ville, le département, le thème,
         le caractère futur et le chevauchement avec la période demandée.
@@ -441,8 +453,7 @@ Réponse :
         return filtered_docs
 
     def _format_docs(self, docs: List[Any]) -> str:
-        """
-        Formate les documents retenus pour le LLM.
+        """        Formate les documents retenus pour le LLM.
 
         Le texte indexé est inclus afin que le modèle puisse s'appuyer sur les
         descriptions, les thèmes et les informations réellement disponibles.
@@ -478,15 +489,14 @@ Contenu indexé :
 {content}"""
             )
 
-        return "\n\n---\n\n".join(formatted_docs)
+        return "---".join(formatted_docs)
 
     # ------------------------------------------------------------------
     # Interface publique
     # ------------------------------------------------------------------
 
     def ask(self, question: str) -> Dict[str, Any]:
-        """
-        Répond à une question utilisateur à partir des événements indexés.
+        """        Répond à une question utilisateur à partir des événements indexés.
         """
         current_date = datetime.now().date()
         formatted_current_date = current_date.strftime("%A %d %B %Y")

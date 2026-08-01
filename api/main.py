@@ -54,7 +54,7 @@ class ChatRequest(BaseModel):
         min_length=1,
         max_length=1_000,
         description="Question de l'utilisateur sur les événements culturels.",
-        examples=["Quels concerts de jazz sont proposés à Paris le 24 juillet 2026 ?"],
+        examples=["Quelles activités autour de l’astronomie sont proposées à Paris le 12 août 2026 ?"],
     )
 
 

@@ -1,0 +1,6 @@
+question,reference
+"Quels concerts de jazz sont proposés à Paris le 24 juillet 2026 ?","Le système doit proposer « Django Reinhardt Tribute / Baptiste Ferrandis & Friends », un concert de jazz à Paris le 24 juillet 2026."
+"Y a-t-il un événement mêlant cinéma et jazz à Paris le 1er août 2026 ?","Oui. Le système doit retrouver « CINÉ-JAZZ : les thèmes légendaires du grand écran », proposé à Paris le 1er août 2026."
+"Que peut-on faire à Paris autour du patrimoine les 19 et 20 septembre 2026 ?","Le système doit proposer au moins une activité liée aux Journées européennes du patrimoine à Paris les 19 et 20 septembre 2026, par exemple une exposition patrimoniale, une visite des Archives de Paris ou une activité consacrée aux rives de Seine inscrites à l'UNESCO."
+"Existe-t-il une visite des coulisses du Grand Rex à Paris en septembre 2026 ?","Oui. Le système doit retrouver « Visite des coulisses du Grand Rex », programmée à Paris les 19 et 20 septembre 2026."
+"Que se passe-t-il à Paris le 12 août 2026 autour de l’astronomie ?","Le système doit retrouver « Éclipse de Soleil - Nuit des étoiles », programmé à Paris le 12 août 2026."

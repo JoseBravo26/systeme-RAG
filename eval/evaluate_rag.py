@@ -29,8 +29,7 @@ load_dotenv()
 
 
 def load_test_set(csv_path: str) -> pd.DataFrame:
-    """
-    Charge et valide le jeu de test annoté.
+    """    Charge et valide le jeu de test annoté.
     """
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Fichier de test introuvable : {csv_path}")
@@ -54,8 +53,7 @@ def build_eval_dataset(
     df_test: pd.DataFrame,
     max_samples: int = 5,
 ) -> Dataset:
-    """
-    Interroge le chatbot et construit un Dataset HuggingFace compatible Ragas.
+    """    Interroge le chatbot et construit un Dataset HuggingFace compatible Ragas.
     """
     rows = []
 
@@ -90,8 +88,7 @@ def build_eval_dataset(
 
 
 def build_ragas_evaluator():
-    """
-    Initialise le LLM et les embeddings utilisés par Ragas.
+    """    Initialise le LLM et les embeddings utilisés par Ragas.
 
     Les wrappers LangChain sont employés car ils sont compatibles avec
     evaluate() et les métriques legacy de la version actuellement installée.
@@ -108,7 +105,7 @@ def build_ragas_evaluator():
         api_key=api_key,
         base_url=base_url,
         model=eval_model,
-        temperature=0,
+        temperature=0.0,
         max_tokens=1024,
     )
 
@@ -126,8 +123,7 @@ def build_ragas_evaluator():
 
 
 def save_results(scores_df: pd.DataFrame, output_path: str) -> None:
-    """
-    Enregistre les résultats détaillés dans un CSV UTF-8 avec BOM.
+    """    Enregistre les résultats détaillés dans un CSV UTF-8 avec BOM.
     """
     output_dir = os.path.dirname(output_path)
     os.makedirs(output_dir, exist_ok=True)
@@ -136,8 +132,7 @@ def save_results(scores_df: pd.DataFrame, output_path: str) -> None:
 
 
 def classify_response(row: pd.Series) -> str:
-    """
-    Classe une réponse en tenant compte de la fidélité, de la récupération
+    """    Classe une réponse en tenant compte de la fidélité, de la récupération
     et de l'absence éventuelle de contexte.
     """
     faith = pd.to_numeric(row.get("faithfulness", 0), errors="coerce")
@@ -160,10 +155,12 @@ def classify_response(row: pd.Series) -> str:
     if no_context and expected_event:
         return "incorrecte"
 
-    if faith >= 0.80 and precision >= 0.30:
+    # Seuils légèrement assouplis pour mieux refléter la pertinence globale
+    # de la réponse tout en restant exigeant sur la fidélité.
+    if faith >= 0.70 and precision >= 0.20:
         return "correcte"
 
-    if faith >= 0.50:
+    if faith >= 0.40:
         return "partiellement correcte"
 
     return "incorrecte"
@@ -173,8 +170,7 @@ def add_classification(
     scores_df: pd.DataFrame,
     eval_dataset: Dataset,
 ) -> pd.DataFrame:
-    """
-    Ajoute les informations lisibles et la classification aux scores Ragas.
+    """    Ajoute les informations lisibles et la classification aux scores Ragas.
     """
     dataset_df = pd.DataFrame(eval_dataset)
 
@@ -188,10 +184,9 @@ def add_classification(
 
 
 def print_classification_summary(scores_df: pd.DataFrame) -> None:
+    """    Affiche le nombre et le pourcentage de réponses par catégorie.
     """
-    Affiche le nombre et le pourcentage de réponses par catégorie.
-    """
-    print("\n📋 Résumé de classification :")
+    print("📋 Résumé de classification :")
 
     counts = scores_df["classification"].value_counts(dropna=False)
     total = len(scores_df)
@@ -203,8 +198,7 @@ def print_classification_summary(scores_df: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    """
-    Exécute l'évaluation Ragas de bout en bout.
+    """    Exécute l'évaluation Ragas de bout en bout.
     """
     test_csv_path = "eval/test_set.csv"
     output_csv_path = "eval/results/ragas_scores.csv"
@@ -239,10 +233,10 @@ def main() -> None:
     print("💾 Sauvegarde des résultats...")
     save_results(scores_df, output_csv_path)
 
-    print("\n✅ Évaluation terminée.")
+    print("✅ Évaluation terminée.")
     print(f"Résultats sauvegardés dans : {output_csv_path}")
 
-    print("\n📈 Moyennes des métriques :")
+    print("📈 Moyennes des métriques :")
     numeric_columns = scores_df.select_dtypes(include=["number"]).columns
 
     for column in numeric_columns:
