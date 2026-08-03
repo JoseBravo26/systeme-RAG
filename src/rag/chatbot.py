@@ -250,10 +250,11 @@ Réponse :
             end_date = start_date + timedelta(days=1)
 
         # Cas : "le 24 juillet 2026" ou "1er août 2026".
+        # Cas : « le 24 juillet 2026 » ou « 1er août 2026 ».
         date_pattern = (
-            r"(?:le\s+)?(\d{1,2}|1er)\s+("
+            r"\b(?:le\s+)?(\d{1,2}|1er)\s+("
             + "|".join(self.MONTHS.keys())
-            + r")\s+(20\d{2})"
+            + r")\s+(20\d{2})\b"
         )
         exact_match = re.search(date_pattern, normalized_question)
 
